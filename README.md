@@ -97,15 +97,7 @@ The measured and tested matrix uses these physical LQFP32 chip pins:
 
 [Main firmware](src/matrix_test.c) selects one open-drain row low at a time and reads high-impedance columns. All seven matrix pins have explicit internal pull-ups and digital inputs enabled. Each row has a 1 ms release and 1 ms selection settling interval. This resolved the earlier false whole-column detections. GPIO setup follows chapter 9 of the [STC8C manual](https://www.stcmicro.com/datasheet/STC8C-cn.pdf).
 
-The optional chip-pin mapping UI, server, and raw measurements are kept together in the gitignored `local-continuity/` folder on the development computer. They are not included in a fresh clone; the verified matrix above is the firmware reference. If the local folder is present, launch it with:
-
-```powershell
-.\.venv\Scripts\python.exe local-continuity/serve_continuity.py
-```
-
-Open http://127.0.0.1:8765/. Changes save to `local-continuity/continuity-map.json`; output candidates, undo, and JSON export are also supported.
-
-`matrix_test` is the default build target; `pin_watch` and `uart_smoke` retain earlier diagnostics. Run `tools/test_output_commands.py` with the project Python to test the real command parser in the SDCC 8051 simulator (35 cases). Raw serial logs and flash evidence remain in `captures/`, including `matrix-test-20260929-101431Z.jsonl`, `matrix-flash-v3.log`, and `output-commands.jsonl`.
+`matrix_test` is the default build target; `pin_watch` and `uart_smoke` retain earlier diagnostics. Run `tools/test_output_commands.py` with the project Python to test the command parser in the SDCC 8051 simulator (35 cases).
 
 ## Using the original firmware instead
 
