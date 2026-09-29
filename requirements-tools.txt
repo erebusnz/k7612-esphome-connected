@@ -1,0 +1,5 @@
+stcgal==1.10
+pyserial==3.5
+tqdm==4.70.1
+colorama==0.4.6
+platformio==6.2.0

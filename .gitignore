@@ -1,0 +1,7 @@
+.venv/
+.pio/
+__pycache__/
+*.pyc
+/captures
+/local-continuity/
+/data
