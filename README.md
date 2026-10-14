@@ -4,6 +4,8 @@ Replacement firmware for the **STC8C2K32S2** in the K7612 access keypad.
 It reads the 12-key matrix and EM4100 RFID tags concurrently, reports events
 over UART, and generates a confirmation tone for each key press or new tag.
 
+<img src="docs/images/k7612-keypad.png" alt="K7612 access keypad with a metal housing and 12-key numeric keypad" width="280">
+
 The primary build is `keypad_reader`. It starts automatically at power-on and
 uses fixed-memory, interrupt-assisted acquisition suitable for the 8-bit MCU.
 ESPHome integration, PIN authorization, credential storage, relay control and
