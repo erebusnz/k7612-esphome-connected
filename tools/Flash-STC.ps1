@@ -4,8 +4,8 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidatePattern('^COM[0-9]+$')]
     [string]$Port,
-    [ValidateSet('pin_watch', 'uart_smoke', 'matrix_test')]
-    [string]$Environment = 'matrix_test'
+    [ValidateSet('pin_watch', 'uart_smoke', 'matrix_test', 'rfid_firmware_test', 'keypad_reader')]
+    [string]$Environment = 'keypad_reader'
 )
 $ErrorActionPreference = 'Stop'
 $repoPath = Split-Path -Parent $PSScriptRoot

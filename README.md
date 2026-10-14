@@ -1,106 +1,154 @@
-# K7612 replacement firmware
+# K7612 keypad and RFID firmware
 
-Replacement firmware for the K7612 keypad's **STC8C2K32S2** MCU, with the goal of exposing key events and LED/buzzer control over UART to an ESP32 running ESPHome.
+Replacement firmware for the **STC8C2K32S2** in the K7612 access keypad.
+It reads the 12-key matrix and EM4100 RFID tags concurrently, reports events
+over UART, and generates a confirmation tone for each key press or new tag.
 
-This repository contains the MCU firmware, Arduino UART bridge, flashing tools, and measured pin mappings. The current firmware is a working bench diagnostic; ESPHome integration and replacement lock-control logic are not implemented yet.
+The primary build is `keypad_reader`. It starts automatically at power-on and
+uses fixed-memory, interrupt-assisted acquisition suitable for the 8-bit MCU.
+ESPHome integration, PIN authorization, credential storage, relay control and
+Wiegand output are not implemented. This is reader firmware, not a complete
+access-control system.
 
-## Firmware status
+## Features
 
-The installed **matrix/output test v3** builds to 3,975 bytes and communicates at **9600 baud, 8N1**.
+- Debounced `1`–`9`, `*`, `0`, `#` press and release events; no held-key repeat.
+- EM4100 RF/64 Manchester decoding with header, row parity, column parity and
+  stop-bit validation. Invalid frames are rejected without bit repair.
+- One RFID notification per presentation; removal rearms notification after
+  1.5 seconds without a matching frame or eligible presence prefix.
+- Shared non-blocking buzzer queue: approximately 204 ms at 2.5 kHz per event,
+  with at least 20 ms between tones.
+- UART at **9600 baud, 8N1**, with acquisition and status diagnostics.
 
-| Feature | Status |
+See the [reader interface](docs/keypad-reader.md) for events and commands and
+the [firmware architecture](docs/firmware-architecture.md) for implementation
+details, resource use and limitations.
+
+## Hardware
+
+The supported target is the **STC8C2K32S2, LQFP32, at 24 MHz**. Check the MCU
+and board routing before using this firmware on another K7612 revision.
+
+| Function | MCU signals | Physical pins |
+| --- | --- | --- |
+| Matrix rows | P0.0, P0.1, P0.2, P0.3 | 29, 30, 31, 32 |
+| Matrix columns | P1.5, P1.4, P1.3 | 6, 5, 4 |
+| RFID carrier drive | P3.5 / T0CLKO | 18 |
+| RFID comparator inputs | P3.6, P3.7 | 19, 20 |
+| Buzzer drive | P3.4 | 17 |
+
+Rows use open-drain outputs and columns use inputs with pull-ups. The scanner
+releases each row between selections. The carrier is nominally 125 kHz.
+
+### Programming connection
+
+Use a compatible logic-level USB-to-UART adapter. The supported Arduino Micro
+bridge is [ProMicroUartBridge.ino](tools/ProMicroUartBridge/ProMicroUartBridge.ino);
+upload it using the Arduino's actual board profile before programming the STC.
+
+| Adapter | Keypad |
 | --- | --- |
-| 12-key matrix | All keys and a held-key test passed on v2; scan retained in v3, full v3 key regression pending |
-| LED1 / P2.6 / chip pin 27 | On/off verified, active-low |
-| LED2 / P2.7 / chip pin 28 | On/off verified, active-low |
-| Buzzer / P3.4 / chip pin 17 | Both GPIO transitions produce a click; tone generation is next |
-| Serial output commands | Implemented and tested on hardware |
-| ESPHome and lock control | Not implemented |
-
-The buzzer behavior is consistent with a passive transducer. The current command applies a steady level; it does not generate a tone. Outputs start in high-impedance mode. Next steps are timer-driven buzzer tones, a full key regression on v3, and ESPHome integration.
-
-## Build and program the MCU
-
-The tested setup uses an **Arduino Micro as a USB-to-UART bridge**, with PlatformIO/SDCC for compilation and stcgal for STC programming. Upload [ProMicroUartBridge.ino](tools/ProMicroUartBridge/ProMicroUartBridge.ino) to the Arduino Micro first, selecting its actual board profile. Programming the STC afterward does not replace the Arduino's bridge firmware.
-
-### Connect the programmer
-
-For the tested 5 V Arduino Micro and 5 V keypad MCU:
-
-| Arduino Micro | Keypad |
-| --- | --- |
-| D1 / TX | MCU RX |
-| D0 / RX | MCU TX |
+| TX | MCU RX |
+| RX | MCU TX |
 | GND | GND |
-| VCC / RAW | Leave disconnected; use the keypad's normal supply |
+| Power output | Disconnected; keypad uses its own supply |
 
-Identify the UART header signals by function: its numbered connector pinout remains unverified. Swapped RX/TX wiring caused earlier programming failures; correcting it restored flashing.
+The target UART operates in a 5 V signal domain. A 3.3 V adapter or ESP32 needs
+appropriate level translation. Identify connector signals by function;
+numbered connector positions are not established here.
 
-The keypad must fully power down to enter its bootloader on the next power-on. Arduino TX can backfeed the unpowered MCU. A Schottky diode with its **band/cathode toward Arduino TX** and anode toward keypad RX blocks that path; a pull-up from keypad RX to the keypad's switched MCU +5 V supplies the high level. Verify power-off MCU VCC falls close to zero. A series resistor alone left our MCU at 1.5 V and did not solve the backfeeding.
+The MCU must fully power down before entering its bootloader. Prevent adapter
+TX from backfeeding the unpowered target. For a 5 V Arduino Micro, the established
+arrangement uses a Schottky diode with cathode toward Arduino TX and anode
+toward keypad RX, plus a pull-up from keypad RX to the switched MCU 5 V supply.
+Verify that MCU VCC falls close to zero when target power is removed.
 
-**Flashing replaces the original firmware.** The development unit's original firmware was overwritten without a backup. If you want to retain factory behavior, see the original-firmware option below before flashing.
+**Programming replaces the installed firmware.** Retaining factory operation
+requires a separate backup or an unmodified unit. The
+[factory UART interface](docs/using-unflashed-k7612.md) is an alternative to
+installing this firmware and uses a different protocol.
 
-### Set up and flash
+## Build
 
-Run from the repository root in PowerShell. Python 3.12 was used for the tested setup.
+The development toolchain is Python 3.12, PlatformIO and SDCC. Dependencies and
+the PlatformIO platform version are pinned in the repository.
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-tools.txt
-.\.venv\Scripts\python.exe -m serial.tools.list_ports -v
-.\.venv\Scripts\pio.exe run -e matrix_test
-.\tools\Flash-STC.ps1 -Port COM14 -Environment matrix_test
+.venv/Scripts/python.exe -m pip install -r requirements-tools.txt
+.venv/Scripts/pio.exe run
 ```
 
-Replace `COM14` with the Arduino's current port. Close other serial monitors, keep Arduino USB powered, and power-cycle the keypad when stcgal shows **Waiting for MCU**. The flash script rebuilds before programming and stops if compilation fails.
+These examples use PowerShell on Windows. On other hosts, use the virtual
+environment's corresponding executable paths; those hosts have not been
+hardware-qualified. Building does not program the MCU.
 
-The verified programmer settings are **`-P stc8d -l 2400 -b 19200 -t 24000`**. The script supplies them automatically; automatic `stc8` selection previously failed during clock calibration. These settings worked with the tested MCU's 7.3.13U bootloader.
-
-### Verify and send commands
-
-After flashing, query the firmware or record key events:
-
-```powershell
-.\.venv\Scripts\python.exe tools/send_output.py COM14 "?"
-.\.venv\Scripts\python.exe tools/watch_matrix.py COM14 --seconds 60
-```
-
-Run one serial tool at a time. After the key logger exits, test outputs with:
-
-```powershell
-.\.venv\Scripts\python.exe tools/send_output.py COM14 "LED1 Y"
-.\.venv\Scripts\python.exe tools/send_output.py COM14 "LED1 N"
-```
-
-The same `Y`/`N` commands exist for `LED2` and `BUZZER`. Commands are case-insensitive ASCII lines terminated by CR, LF, or CRLF; wait for an acknowledgment before sending the next command. Default active-low polarity means Y drives low and N drives high. Both LED polarities are verified; buzzer Y/N currently only tests steady levels.
-
-| Command | Behavior |
+| Environment | Purpose |
 | --- | --- |
-| `LED1 Y/N`, `LED2 Y/N`, `BUZZER Y/N` | Drive the selected output; replies include the actual requested high/low level |
-| `POL LED1 H/L` | Select active-high/low polarity and release that output; also accepts LED2 or BUZZER |
-| `RELEASE` | Return all three outputs to high impedance |
-| `?` | Report firmware identity, configuration, outputs, and matrix state |
-| `DIAG Y/N` | Enable/disable per-row diagnostics; disabled by default |
+| `keypad_reader` (default) | Combined keypad, RFID and confirmation tones |
+| `rfid_firmware_test` | RFID acquisition diagnostics without keypad scanning |
+| `matrix_test` | Standalone matrix and direct LED/buzzer output diagnostics |
+| `uart_smoke`, `pin_watch` | Low-level UART and GPIO diagnostics |
 
-Settings are not persisted. High impedance does not guarantee an external circuit is off. Lines are limited to 23 characters; malformed commands return `ERR`. After a receive-buffer overflow, send a newline to resynchronize. Key events appear as `KEY DOWN 1 R0 C0` and `KEY UP 1 R0 C0`; multiple detected keys are blocked until all are released.
+Select another environment with `pio run -e <environment>`.
 
-## Matrix and development tools
+## Flash
 
-The measured and tested matrix uses these physical LQFP32 chip pins:
+```powershell
+.venv/Scripts/python.exe -m serial.tools.list_ports -v
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/Flash-STC.ps1 -Port COM14 -Environment keypad_reader
+```
 
-| Row | Pin 6 / P1.5 | Pin 5 / P1.4 | Pin 4 / P1.3 |
-| --- | --- | --- | --- |
-| Pin 29 / P0.0 | 1 | 2 | 3 |
-| Pin 30 / P0.1 | 4 | 5 | 6 |
-| Pin 31 / P0.2 | 7 | 8 | 9 |
-| Pin 32 / P0.3 | * | 0 | # |
+Replace `COM14` with the adapter's port. Close other serial applications, keep
+the USB adapter powered, and cycle target power when prompted. The script
+builds first and stops on compilation failure. It uses stcgal's `stc8d`
+protocol, 2400-baud bootloader detection, 19200-baud programming and 24 MHz
+oscillator calibration for the supported MCU/bootloader configuration.
 
-[Main firmware](src/matrix_test.c) selects one open-drain row low at a time and reads high-impedance columns. All seven matrix pins have explicit internal pull-ups and digital inputs enabled. Each row has a 1 ms release and 1 ms selection settling interval. This resolved the earlier false whole-column detections. GPIO setup follows chapter 9 of the [STC8C manual](https://www.stcmicro.com/datasheet/STC8C-cn.pdf).
+## Use
 
-`matrix_test` is the default build target; `pin_watch` and `uart_smoke` retain earlier diagnostics. Run `tools/test_output_commands.py` with the project Python to test the command parser in the SDCC 8051 simulator (35 cases).
+Open a serial terminal at 9600 baud, 8N1. Normal output includes:
 
-## Using the original firmware instead
+```text
+KEY DOWN 5
+KEY UP 5
+Frame hex: FF8060280C048142
+Data: 0102030405
+BEEP DONE
+TAG ABSENT REARMED
+```
 
-An unmodified keypad can also communicate through its **TX/RX pin header** using the factory **Tuya MCU UART protocol at 9600 baud, 8N1**. For an ESP32 or another 3.3 V controller, use a suitable **5 V ↔ 3.3 V UART level shifter**, crossing TX to RX in each direction and sharing ground. Keep the keypad on its own supply.
+Each key press and newly acquired tag requests a tone. Release events do not.
+Multiple simultaneous keys block new presses until all keys are released.
+Periodic `READ` lines report acquisition and queue diagnostics.
 
-Factory-firmware lock/unlock through **DP1** was physically verified; individual key events and card IDs were not established. This is an alternative to flashing, and its binary protocol differs from the replacement firmware's text commands. See [using the original firmware](docs/using-unflashed-k7612.md) for wiring and protocol details.
+The reader starts automatically. Send `!` to stop it before issuing a command;
+then send `?` to query status or `READ` followed by a newline to restart.
+Commands for the separate `matrix_test` environment, such as direct LED
+control, are not supported by `keypad_reader`.
+
+## Validate changes
+
+After installing the toolchain with a build:
+
+```powershell
+.venv/Scripts/python.exe tools/test_reader.py
+```
+
+The suite compiles actual C code and runs it in the 8051 simulator. It covers
+frame validation, sampling and timer wrap, debounce, multi-key handling, tone
+queuing, presence suppression and interrupt storage isolation. Fixtures are
+generated by the tests; no local captures or connected hardware are needed.
+
+Tests locate SDCC and `s51` in PlatformIO's toolchain, or via `SDCC_BIN` or
+`PATH`. The generic simulator does not model the STC analog front end or prove
+real-time hardware margins. Physical validation has covered tag presentation
+and removal, keypad presses, held-key suppression and tone feedback on the
+development board. Reception range, other board revisions and long-term
+reliability remain unqualified.
+
+Keep changes bounded and non-blocking, run the simulator suite, and build both
+reader environments before submitting a change. Document changes to UART
+events, pin assignments or timer ownership. Generated builds, local captures
+and machine-specific equipment settings do not belong in firmware changes.
