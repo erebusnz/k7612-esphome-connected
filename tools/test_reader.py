@@ -7,6 +7,7 @@ import sys
 def main():
     tools = Path(__file__).resolve().parent
     suites = [
+        ('test_wiegand.py',),
         ('test_keypad_reader.py',),
         ('test_rfid_decoder.py', '--header'),
         ('test_rfid_decoder.py', '--clock-tracking'),

@@ -2,14 +2,19 @@
 
 The firmware targets the STC8C2K32S2 at 24 MHz with 32 KiB program flash,
 2 KiB XRAM and 256 bytes internal RAM. State is fixed-size throughout;
-there is no heap allocation or operating system.
+there is no heap allocation or operating system. Unless stated otherwise,
+this page describes `keypad_reader` and `rfid_firmware_test`.
 
 ## Source layout
 
 | File | Responsibility |
 | --- | --- |
 | `src/keypad_reader.c` | Combined entry point enabling keypad support |
-| `src/rfid_firmware_test.c` | Shared hardware setup, timer ISRs, UART and service loop |
+| `src/reader_firmware.h` | Shared hardware setup, timer ISRs and service loop |
+| `src/reader_uart.h` | Buffered UART transport, interrupt handler and message admission |
+| `src/rfid_firmware_test.c` | Separate RFID-only diagnostic entry point |
+| `src/indicator_service.h` | OPEN debounce, red/green state and PIN submission flash |
+| `src/wiegand_service.h` | Frame FIFO, Timer1 pulse scheduling, decimal PIN entry and sense-pin probe |
 | `src/keypad_service.h` | Cooperative scan, debounce and shared tone scheduling |
 | `src/rfid_sampler.h` | Qualified comparator edges and ISR-to-foreground FIFO |
 | `src/rfid_decoder.h` | Frame/parity validation and selectable decoders |
@@ -17,41 +22,52 @@ there is no heap allocation or operating system.
 | `src/rfid_presence.h` | Notification suppression and absence expiry |
 | `src/rfid_capture.h` | Bounded raw-capture diagnostics |
 
-The combined entry point includes the shared implementation with
-`K7612_KEYPAD` defined. PlatformIO compiles one entry point per environment;
-the shared C file must not also be compiled separately in the combined target.
+The main `keypad_reader.c` entry point includes `reader_firmware.h` with
+`K7612_KEYPAD` defined. It does not include the diagnostic C entry point. PlatformIO compiles one entry point per environment;
+the header implementation is compiled once through the selected entry point.
 
 ## Hardware ownership
 
 | Resource | Owner |
 | --- | --- |
 | Timer0 / P3.5 T0CLKO | Nominal 125 kHz carrier |
-| Timer1 | High-priority comparator sampling every 16 µs during normal reading |
+| Timer1 | High-priority comparator sampling every 16 Âµs during normal reading |
 | Timer2 | UART baud generation during reading |
-| Timer3 | Free-running 0.5 µs timestamps |
-| Timer4 / P3.4 | Confirmation tone, 200 µs half-period |
+| Timer3 | Free-running 0.5 Âµs timestamps |
+| Timer4 / P3.4 | Confirmation tone, 200 Âµs half-period |
 | Comparator P3.6/P3.7 | RF demodulator input |
-| P0.0–P0.3, P1.5/P1.4/P1.3 | Open-drain matrix rows and input columns |
+| P0.0â€“P0.3, P1.5/P1.4/P1.3 | Open-drain matrix rows and input columns |
 
 The comparator uses the external input pair. Its physical output is disabled
 because that pin is the buzzer drive. The firmware imposes no pull-up bias on
-the analog inputs. Relay, LED and Wiegand functionality is not part of the
-combined reader.
+the analog inputs. Relay control is not part of the main firmware. OPEN P2.2 selects red P2.7
+or green P2.6; both LED outputs are active HIGH. Wiegand output
+requires a verified polarity setting or a successful explicit sense-pin probe.
 
-Boot uses Timer1 for UART initialization, verifies the Timer2 UART path, then
-reassigns Timer1 to sampling. Startup probes are bounded and leave the carrier
+Boot uses Timer1 for UART initialization, configures the Timer2 UART path, then
+reassigns Timer1 to sampling. The combined image defaults to UART debugging OFF;
+TX probes and all UART messages are suppressed until `DEBUG ON` is selected
+while stopped. UART RX remains available for the stop command, with its pull-up explicitly
+enabled so an unplugged UART input stays idle HIGH. With debugging
+enabled, the Timer2 TX path is probed on first setup. Sampling startup probes are bounded and leave the carrier
 off on failure. The carrier remains active while reading; factory-style idle
 duty cycling is not implemented.
 
 ## Acquisition and concurrency
 
-The sampler qualifies a transition after at least 24 µs of stability
-(nominally 32 µs at the default cadence). It timestamps the initial observation
+The sampler qualifies a transition after at least 24 Âµs of stability
+(nominally 32 Âµs at the default cadence). It timestamps the initial observation
 rather than qualification completion. The FIFO holds 127 events with a 16-bit
 timestamp and the level preceding the transition.
 
-The sampling ISR does not decode frames, format UART messages or inspect
-presence. A gap above 24 µs or a full FIFO raises a fault. Foreground handling
+The sampling ISR also advances a pre-encoded Wiegand frame one edge at a time;
+its helper uses bank 1 and disables overlaying. Foreground publishes complete
+frames to a byte-indexed three-slot ring (two outstanding frames maximum).
+STOP masks sampling before resetting the output state. It does not decode
+Wiegand credentials or busy-wait for pulses.
+
+The sampling ISR does not decode RFID frames, format UART messages or inspect
+presence. A gap above 24 Âµs or a full FIFO raises a fault. Foreground handling
 discards uncertain queued data, resets decoding and postpones expiry of an
 already-present tag: lost samples are not proof of removal.
 
@@ -59,7 +75,9 @@ UART transmission is buffered and tones use a separate timer. The keypad
 scanner performs one row transition or sample per service interval, allowing
 at least 1 ms for each released/selected phase. It does not borrow the carrier
 timer or wait for settling. Diagnostics reserve UART space before writing;
-overload is counted instead of stalling acquisition.
+overload is counted instead of stalling acquisition. The foreground-only
+`uart_reserve()` check admits a complete message or counts one dropped message;
+the UART ISR can only free queue space during its emission.
 
 The sampling ISR uses register bank 1; the tone ISR uses bank 2. The sampler
 helper disables SDCC parameter/local overlaying because register banks do not
@@ -68,8 +86,8 @@ with the actual compiled sampler ISR to check this boundary.
 
 ## Manchester decoding
 
-The default decoder assumes EM4100 RF/64: a 512 µs bit comprising two 256 µs
-half-bits. Four bit phases, spaced 128 µs apart, integrate the central 128 µs
+The default decoder assumes EM4100 RF/64: a 512 Âµs bit comprising two 256 Âµs
+half-bits. Four bit phases, spaced 128 Âµs apart, integrate the central 128 Âµs
 of each half-bit using qualified edge timestamps. The lower-disagreement
 Manchester interpretation selects each bit; equal costs reset assembly.
 
@@ -113,8 +131,8 @@ for a held key or tag.
 
 ## Resource budget
 
-The SDCC 4.4.0 combined build uses approximately 11 KiB flash and 1.9 KiB XRAM.
-The linker reports roughly 130 bytes available for stack. These are build
+The SDCC 4.4.0 combined build uses 14,635 bytes flash and 1,989 bytes XRAM.
+The linker reports 133 bytes available for stack. These are build
 figures, not measured worst-case stack use; inspect the generated `firmware.mem`
 after changes. Direct-addressable internal RAM is particularly constrained.
 

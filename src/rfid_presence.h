@@ -6,11 +6,11 @@
  * prefix can extend existing presence, but never acquire or notify a tag.
  */
 static __xdata unsigned char presence_frame[8];
-static unsigned char presence_count, presence_notified;
+static unsigned char presence_count;
 static __xdata unsigned long presence_last_seen;
 static void presence_reset(void)
 {
-    presence_count=presence_notified=0;
+    presence_count=0;
 }
 static unsigned char presence_expire(unsigned long now)
 {
@@ -28,13 +28,11 @@ static unsigned char presence_acquired(const unsigned char __xdata *frame,
     else for(i=0;i<8;++i) if(frame[i]!=presence_frame[i]) same=0;
     if(!same) {
         for(i=0;i<8;++i) presence_frame[i]=frame[i];
-        presence_count=1; presence_notified=0;
+        presence_count=1;
     }
     presence_last_seen=now;
-    if(!presence_notified) {
-        presence_notified=1; return 1;
-    }
-    return 0;
+    /* Presence is acquired and notified together; no second flag is needed. */
+    return !same;
 }
 static unsigned char presence_observed_prefix(const unsigned char __xdata *prefix,
                                              unsigned long now)

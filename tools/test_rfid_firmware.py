@@ -27,7 +27,7 @@ void check_presence(void) {
     check(!presence_acquired(reader_frames[0],800000UL));
     for(i=1;i<=30;++i)
         if(presence_acquired(reader_frames[0],800000UL+i*1000000UL)) ++result[1];
-    check(presence_notified && presence_count==1); /* Held for >10 s. */
+    check(presence_count==1); /* Held for >10 s. */
     presence_expire(33799999UL); check(presence_count==1);
     presence_expire(33800000UL); check(presence_count==0);
     check(presence_acquired(reader_frames[0],33800000UL));
@@ -125,6 +125,16 @@ void main(void) {
     uart_putc(9); check(reader_tx_dropped==1);
     for(i=0;i<256;++i) { TI=1; uart1_isr(); }
     check(!reader_tx_busy && reader_tx_head==reader_tx_tail);
+    /* Whole-message admission at exact capacity, including index wrap.
+     * Failure must neither publish a partial message nor consume queue space. */
+    reader_tx_head=250; reader_tx_tail=11; reader_tx_dropped=0;
+    check(uart_reserve(16) && !reader_tx_dropped);
+    check(!uart_reserve(17) && reader_tx_dropped==1);
+    check(reader_tx_head==250 && reader_tx_tail==11);
+    reader_tx_head=10; reader_tx_tail=11; /* Full ring. */
+    check(!uart_reserve(1) && reader_tx_dropped==2);
+    reader_tx_head=reader_tx_tail=250;
+    check(uart_reserve(255) && reader_tx_dropped==2);
     reader_uart_active=0; ES=0;
     sampler_window=2; sampler_window_done=0; sampler_probe=0;
     TR1=1; ET1=1; carrier_on();

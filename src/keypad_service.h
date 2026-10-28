@@ -20,8 +20,8 @@ static void keypad_beep_request(void)
 }
 static void keypad_event(unsigned char down,unsigned char index)
 {
-    if(down) keypad_beep_request();
-    if((unsigned char)(reader_tx_tail-reader_tx_head-1)<16) { ++reader_tx_dropped; return; }
+    if(down) { pin_key(keypad_keys[index]); keypad_beep_request(); }
+    if(!uart_reserve(16)) return;
     uart_puts(down ? "KEY DOWN " : "KEY UP ");
     uart_putc(keypad_keys[index]); uart_puts("\r\n");
 }
@@ -30,11 +30,11 @@ static void keypad_update(unsigned int raw)
     static __xdata unsigned char next,i;
     static __xdata unsigned int bits;
     next=255;
-    if(raw && (raw & (raw-1))) keypad_blocked=1;
+    if(raw && (raw & (raw-1))) { keypad_blocked=1; pin_clear(); }
     if(keypad_blocked) {
         if(keypad_held!=255) {
             /* Ambiguous multi-key state cancels, never creates another press. */
-            if((unsigned char)(reader_tx_tail-reader_tx_head-1)>=16) uart_puts("KEY CANCEL\r\n");
+            if(uart_reserve(16)) uart_puts("KEY CANCEL\r\n");
             keypad_held=255;
         }
         if(raw) keypad_debounce=0;
@@ -66,8 +66,7 @@ static void keypad_tick(unsigned int now)
     static __xdata unsigned char columns;
     if(keypad_was_beeping && !beep_active) {
         keypad_beep_end=now; keypad_gap=1;
-        if((unsigned char)(reader_tx_tail-reader_tx_head-1)>=16) uart_puts("BEEP DONE\r\n");
-        else ++reader_tx_dropped;
+        if(uart_reserve(16)) uart_puts("BEEP DONE\r\n");
     }
     keypad_was_beeping=beep_active;
     if(keypad_gap && (unsigned int)(now-keypad_beep_end)>=40000u) keypad_gap=0;

@@ -96,6 +96,7 @@ void run_fixture(const unsigned char __code *samples,
     reader_clock_previous=65000u; reader_clock_ticks=0;
 #ifdef K7612_KEYPAD
     keypad_reset(65000u);
+    read_sample_ticks=32u*stride; wg_enable(0); wg_enqueue(1234);
 #endif
     reader_uart_active=1; reader_tx_head=reader_tx_tail=reader_tx_busy=0;
     reader_tx_dropped=0; beep_start();
@@ -104,6 +105,7 @@ void run_fixture(const unsigned char __code *samples,
         sampler_tick(now,(samples[i>>3]>>(i&7))&1);
         reader_clock_update(now);
 #ifdef K7612_KEYPAD
+        wg_tick();
         P1=(keypad_selected && keypad_row==0) ? 0xdf : 0xff;
         keypad_tick(now);
 #endif
@@ -120,13 +122,13 @@ void run_fixture(const unsigned char __code *samples,
     check(notifications==(corrupt ? 0 : 1));
     check(!reader_tx_dropped);
 #ifdef K7612_KEYPAD
-    check(keypad_held==0);
+    check(keypad_held==0 && wg_head==wg_tail && !wg_low && WG_D0 && WG_D1);
 #endif
     beep_stop(); reader_uart_active=0; ES=0;
 }
 ''' + '\n'.join(fixtures) + '''
 void main(void) {
-    initialize_hardware(); result[0]=result[1]=result[2]=0;
+    initialize_hardware(); reader_debug=1; result[0]=result[1]=result[2]=0;
 ''' + ('reader_clock_tracking=2;\n' if '--header' in sys.argv else 'reader_clock_tracking=1;\n' if '--clock-tracking' in sys.argv else 'reader_clock_tracking=0;\n') + '\n'.join(calls) + '\nresult[2]=0xa5; finished();}\n'
 
 if '--combined' in sys.argv:
@@ -146,4 +148,4 @@ with tempfile.TemporaryDirectory(prefix='rfid-streaming-') as directory:
     checks=50 if '--combined' in sys.argv else 40
     if not re.search(rf'0x1000\s+{checks:02x} 00 a5', run.stdout, re.I):
         raise AssertionError(run.stdout + run.stderr)
-    print(f'PASS: {checks} streaming checks (16/32 us): sampled glitches, delayed decoding, UART, beep, parity, timer wrap'+('; simultaneous keypad scan' if '--combined' in sys.argv else ''))
+    print(f'PASS: {checks} streaming checks (16/32 us): sampled glitches, delayed decoding, UART, beep, parity, timer wrap'+('; simultaneous keypad scan and Wiegand output' if '--combined' in sys.argv else ''))

@@ -2,7 +2,7 @@
 #define RFID_CAPTURE_H
 
 /* Sampled edges, not hardware input capture. Timestamps are 0.5 us ticks.
- * Call at least once per Timer2 wrap (32.768 ms at 24 MHz / 12).
+ * Call at least once per Timer3 wrap (32.768 ms at 24 MHz / 12).
  */
 #define RFID_EDGE_CAPACITY 192
 static __xdata unsigned long edge_time[RFID_EDGE_CAPACITY];

@@ -3,24 +3,31 @@
 Replacement firmware for the **STC8C2K32S2** in the K7612 access keypad.
 It reads the 12-key matrix and EM4100 RFID tags concurrently, reports events
 over UART, and generates a confirmation tone for each key press or new tag.
+OPEN selects red/green status; submitting a PIN with `#` flashes both LEDs.
 
 <img src="docs/images/k7612-keypad.png" alt="K7612 access keypad with a metal housing and 12-key numeric keypad" width="280">
 
 The primary build is `keypad_reader`. It starts automatically at power-on and
 uses fixed-memory, interrupt-assisted acquisition suitable for the 8-bit MCU.
-ESPHome integration, PIN authorization, credential storage, relay control and
-Wiegand output are not implemented. This is reader firmware, not a complete
+Wiegand-26/34 output supports RFID and decimal PINs submitted with `#`;
+The main build enables output at boot using the sense-pin-verified active-HIGH
+driver polarity. ESPHome integration, PIN authorization,
+credential storage and relay control are not implemented in `keypad_reader`. This is reader firmware, not a complete
 access-control system.
 
 ## Features
 
-- Debounced `1`–`9`, `*`, `0`, `#` press and release events; no held-key repeat.
+- Debounced `1`â€“`9`, `*`, `0`, `#` press and release events; no held-key repeat.
 - EM4100 RF/64 Manchester decoding with header, row parity, column parity and
   stop-bit validation. Invalid frames are rejected without bit repair.
 - One RFID notification per presentation; removal rearms notification after
   1.5 seconds without a matching frame or eligible presence prefix.
 - Shared non-blocking buzzer queue: approximately 204 ms at 2.5 kHz per event,
   with at least 20 ms between tones.
+- Wiegand-26/34: RFID low 24/32 bits; buffered decimal PIN submission with `#`.
+  See [configuration and polarity probe](docs/keypad-reader.md#wiegand-output-and-pins).
+- Active-HIGH red/green LEDs follow OPEN, with a 150 ms both-on flash for
+  a nonempty, valid PIN submitted using `#`.
 - UART at **9600 baud, 8N1**, with acquisition and status diagnostics.
 
 See the [reader interface](docs/keypad-reader.md) for events and commands and
@@ -34,14 +41,28 @@ and board routing before using this firmware on another K7612 revision.
 
 | Function | MCU signals | Physical pins |
 | --- | --- | --- |
+| Crystal XTALO / XTALI | P1.6 / P1.7 | 7 / 8 |
+| UART RX / TX | P3.0 / P3.1 | 13 / 14 |
 | Matrix rows | P0.0, P0.1, P0.2, P0.3 | 29, 30, 31, 32 |
 | Matrix columns | P1.5, P1.4, P1.3 | 6, 5, 4 |
 | RFID carrier drive | P3.5 / T0CLKO | 18 |
 | RFID comparator inputs | P3.6, P3.7 | 19, 20 |
 | Buzzer drive | P3.4 | 17 |
+| Relay drive (active high, bench-confirmed) | P2.3 | 24 |
+| LED1 green (bench-confirmed) | P2.6 | 27 |
+| LED2 red (bench-confirmed) | P2.7 | 28 |
+| OPEN input (active low) | P2.2 | 23 |
+| D0 green wire output | P5.4 | 9 |
+| D1 white wire output | P5.5 | 11 |
+| D0 green wire (input sense) | P3.3 | 16 |
+| D1 white wire (input sense) | P3.2 | 15 |
 
 Rows use open-drain outputs and columns use inputs with pull-ups. The scanner
 releases each row between selections. The carrier is nominally 125 kHz.
+
+The main connector's OPEN wire, beside D0 and D1, connects to P2.2 / pin 23.
+OPEN HIGH selects red; OPEN LOW selects green. Relay activation is not
+implemented in the main firmware.
 
 ### Programming connection
 
@@ -110,7 +131,10 @@ oscillator calibration for the supported MCU/bootloader configuration.
 
 ## Use
 
-Open a serial terminal at 9600 baud, 8N1. Normal output includes:
+The combined reader starts with UART debugging disabled and operates through
+Wiegand and OPEN without a UART connection. To diagnose it, open a terminal at
+9600 baud, 8N1, send `!`, wait 500 ms, then send `DEBUG ON` and `READ`, each
+followed by Enter. Diagnostic output includes:
 
 ```text
 KEY DOWN 5
@@ -126,7 +150,9 @@ Multiple simultaneous keys block new presses until all keys are released.
 Periodic `READ` lines report acquisition and queue diagnostics.
 
 The reader starts automatically. Send `!` to stop it before issuing a command;
-then send `?` to query status or `READ` followed by a newline to restart.
+then enable `DEBUG ON` if needed and send `?` to query status or `READ` followed
+by a newline to restart. To resume silently, send `DEBUG OFF` before `READ`.
+Every reset restores debugging OFF.
 Commands for the separate `matrix_test` environment, such as direct LED
 control, are not supported by `keypad_reader`.
 
