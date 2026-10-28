@@ -41,7 +41,8 @@ the header implementation is compiled once through the selected entry point.
 The comparator uses the external input pair. Its physical output is disabled
 because that pin is the buzzer drive. The firmware imposes no pull-up bias on
 the analog inputs. Relay control is not part of the main firmware. OPEN P2.2 selects red P2.7
-or green P2.6; both LED outputs are active HIGH. Wiegand output
+or green P2.6. Released OPEN produces P2.6 LOW / P2.7 HIGH;
+pulled-LOW OPEN produces P2.6 HIGH / P2.7 LOW. Wiegand output
 requires a verified polarity setting or a successful explicit sense-pin probe.
 
 Boot uses Timer1 for UART initialization, configures the Timer2 UART path, then
@@ -150,10 +151,7 @@ multi-key handling, tone queues, presence expiry and asynchronous ISR storage
 isolation. Combined streaming tests scan keys while decoding RFID samples.
 
 The generic simulator cannot validate STC timer behavior, analog reception,
-electrical levels or real-time margins. Hardware validation covers RFID
-presentation/removal, key presses and a held key, with confirmation tones and
-no reported sampling or FIFO faults in the completed checks. It does not
-establish guaranteed reading range or broad board compatibility.
+electrical levels or real-time margins. Validate these on the target hardware.
 
 RF/32, arbitrary bit rates, large clock drift and other modulation formats are
 unsupported. Poor analog signals can still lose complete frames. Presence-prefix

@@ -1,7 +1,6 @@
-# Proposed ESPHome package for a classic ESP32-WROOM-32 DevKit.
+# ESPHome package for a classic ESP32-WROOM-32 DevKit.
 # Add to an existing node with Wi-Fi, native API and logger configured.
 # Requires the external buffer and MOSFET in docs/esphome-connection.md.
-# NOT yet compiled or bench-qualified with an ESP32.
 # Use K7612 firmware with the 150 ms frame gap; verify queued scans under load.
 
 wiegand:
@@ -24,11 +23,11 @@ wiegand:
 
 switch:
   - platform: gpio
-    id: k7612_green
-    name: "K7612 Green Indication"
+    id: k7612_red
+    name: "K7612 Red Indication"
     pin:
       number: GPIO27
       inverted: false
     restore_mode: ALWAYS_OFF
-    # ON: gate HIGH -> OPEN pulled LOW -> green.
-    # OFF: gate LOW -> OPEN released -> red.
+    # ON: gate HIGH -> OPEN pulled LOW -> red.
+    # OFF/reset: gate LOW -> OPEN released -> green (not proof of disarming).
