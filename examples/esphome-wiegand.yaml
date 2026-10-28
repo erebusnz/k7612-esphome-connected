@@ -1,0 +1,34 @@
+# Proposed ESPHome package for a classic ESP32-WROOM-32 DevKit.
+# Add to an existing node with Wi-Fi, native API and logger configured.
+# Requires the external buffer and MOSFET in docs/esphome-connection.md.
+# NOT yet compiled or bench-qualified with an ESP32.
+# Use K7612 firmware with the 150 ms frame gap; verify queued scans under load.
+
+wiegand:
+  - id: k7612_reader
+    d0:
+      number: GPIO25
+      mode:
+        input: true
+        pullup: false
+      inverted: false
+    d1:
+      number: GPIO26
+      mode:
+        input: true
+        pullup: false
+      inverted: false
+    # RFID and submitted PINs both arrive here as decimal strings.
+    on_tag:
+      - homeassistant.tag_scanned: !lambda 'return std::string("k7612-") + x;'
+
+switch:
+  - platform: gpio
+    id: k7612_green
+    name: "K7612 Green Indication"
+    pin:
+      number: GPIO27
+      inverted: false
+    restore_mode: ALWAYS_OFF
+    # ON: gate HIGH -> OPEN pulled LOW -> green.
+    # OFF: gate LOW -> OPEN released -> red.

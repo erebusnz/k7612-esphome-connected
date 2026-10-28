@@ -13,6 +13,7 @@ source = r'''
 volatile __xdata __at(0x1000) unsigned char result[64];
 static __xdata unsigned char i,j,k,expected,leading,trailing,last,edges;
 static __xdata unsigned int tick,fall,rise;
+static __xdata unsigned char rx_bits,rx_frames,period_us;
 static __xdata unsigned long value;
 static __xdata unsigned char frame[8];
 void check(unsigned char ok) { ++result[0]; if(!ok && result[1]<59) result[4+result[1]++]=result[0]; }
@@ -62,19 +63,31 @@ void main(void) {
     keypad_reset(0); enter("123"); keypad_update(3); check(!pin_digits);
     wg_reset(); check(wg_enqueue(1)); check(wg_enqueue(2)); check(!wg_enqueue(3));
     wg_reset(); check(wg_head==wg_tail && WG_D0 && WG_D1);
-    /* Actual pin writes: both polarities, both sample rates, two frames FIFO. */
-    for(k=0;k<4;++k) {
-        wg_bits=(k&1) ? 34 : 26; wg_enable(k&1);
-        read_sample_ticks=(k&2) ? 64 : 32;
+    /* Actual pin writes: all format/polarity/sample-rate combinations.
+     * A separate receiver model closes frames after 100 ms without a bit,
+     * matching ESPHome; queued credentials must arrive as two full frames. */
+    for(k=0;k<8;++k) {
+        wg_bits=(k&1) ? 34 : 26; wg_enable((k>>1)&1);
+        read_sample_ticks=(k&4) ? 64 : 32;
         wg_enqueue(1234); wg_enqueue(0xabcdefUL);
-        edges=last=0; fall=rise=0;
-        for(tick=0;tick<12000;++tick) {
+        edges=last=rx_bits=rx_frames=0; fall=rise=0;
+        period_us=(k&4) ? 32 : 16;
+        for(tick=0;tick<30000;++tick) {
             wg_tick();
+            if(rx_bits && (unsigned long)(tick-fall)*period_us>=100000UL) {
+                check(rx_bits==wg_bits); ++rx_frames; rx_bits=0;
+            }
             i=(WG_D0==wg_active); j=(WG_D1==wg_active);
             if(i && j) result[1]++;
             if((i||j) && !last) {
-                if(edges && edges!=wg_bits && tick-fall!=((k&2)?54:107)) result[1]++;
-                if(edges==wg_bits && tick-rise!=((k&2)?1563:3125)) result[1]++;
+                if(edges && edges!=wg_bits && tick-fall!=((k&4)?54:107)) result[1]++;
+                if(edges==wg_bits) {
+                    /* Independent wall-time bounds catch early pulses and
+                     * require rounding up to at least 150 ms at either rate. */
+                    value=(unsigned long)(tick-rise)*period_us;
+                    check(value>=150000UL && value<150000UL+period_us);
+                }
+                ++rx_bits;
                 value=edges<wg_bits ? 1234 : 0xabcdefUL;
                 expected=edges%wg_bits;
                 if(!expected) expected=wg_parity(value>>((wg_bits-2)/2));
@@ -84,12 +97,13 @@ void main(void) {
                 ++edges; fall=tick;
             }
             if(!(i||j) && last) {
-                if(tick-fall!=((k&2)?3:6)) result[1]++;
+                if(tick-fall!=((k&4)?3:6)) result[1]++;
                 rise=tick;
             }
             last=i||j;
         }
         check(edges==2*wg_bits && !wg_low && wg_head==wg_tail);
+        check(rx_frames==2 && !rx_bits);
     }
     /* Construct EM4100 data 0102A55AC3; wg_tag must strip row parity. */
     for(i=0;i<8;++i) frame[i]=0;
@@ -113,4 +127,4 @@ with tempfile.TemporaryDirectory(prefix='wiegand-') as directory:
     run = subprocess.run([str(tool('s51')), '-q', '-c', '-', 'test.ihx'], cwd=folder, env=compiler_environment(), input=f'run 0 0x{address}\ndump xram 0x1000 0x103f\nquit\n', text=True, capture_output=True, timeout=60, check=True)
     match = re.search(r'0x1000\s+([0-9a-f]{2}) 00 a5', run.stdout, re.I)
     assert match, run.stdout+run.stderr
-    print(f'PASS: {int(match[1],16)} Wiegand/PIN checks plus bit and pulse assertions')
+    print(f'PASS: {int(match[1],16)} Wiegand/PIN checks plus pulse timing and 100 ms receiver framing assertions')

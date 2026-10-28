@@ -118,7 +118,9 @@ static void wg_tick(void) __using(1)
         WG_D0=!wg_active; WG_D1=!wg_active; wg_low=0;
         if(++wg_pos==wg_bits) {
             wg_tail=(wg_tail==2 ? 0 : wg_tail+1); wg_pos=0;
-            wg_wait=(read_sample_ticks==32 ? 3125 : 1563); /* >=50 ms idle */
+            /* ESPHome closes a frame after 100 ms without a bit. Allow
+             * 150 ms idle from the final rising edge; round 32 us up. */
+            wg_wait=(read_sample_ticks==32 ? 9375 : 4688);
         } else {
             wg_mask>>=1;
             if(!wg_mask) { wg_mask=0x80; ++wg_byte; }

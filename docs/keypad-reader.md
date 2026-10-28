@@ -110,8 +110,10 @@ overrides it to `1` for this board.
 
 Timer1 schedules pulses alongside RF sampling. Nominal low width is 96 µs;
 falling-edge spacing is 1,712 µs at the normal 16 µs sample cadence, or
-1,728 µs in the 32 µs diagnostic mode. Frames have at least 50 ms idle between
-them. These are scheduling targets, not measured hardware results. STOP
+1,728 µs in the 32 µs diagnostic mode. Frames have at least 150 ms idle between
+them (150.000 ms at 16-microsecond sampling, 150.016 ms at 32-microsecond
+sampling), measured from the last pulse release to the next frame's first
+pulse. This leaves nominal margin beyond ESPHome's 100 ms receive timeout. These are scheduling targets, not measured hardware results. STOP
 releases an active pulse immediately and discards pending frames/PINs;
 the receiver may see a partial frame if stopped during transmission.
 
@@ -346,3 +348,52 @@ are saved locally under `captures/final-silent-20261028T214457Z/` (UTC directory
 name). Final state: reader running with debugging OFF; Flipper emulation OFF.
 This test verifies silent startup and RFID-to-Wiegand output; it does not newly
 validate keypad or OPEN input behavior on hardware.
+
+### ESPHome frame-gap regression update - 29 October 2026
+
+The scheduler's minimum idle between frames was increased from 50 ms to 150 ms.
+The earlier physical captures and firmware hash above describe the previous
+build; they do not constitute a hardware test of this change. Pulse widths,
+within-frame bit spacing, payload encoding and the two-frame FIFO are unchanged.
+
+The SDCC/s51 regression exercises two queued frames in all eight combinations
+of 26/34-bit format, output polarity and 16/32-microsecond sampling. It measures
+pin transitions, checks the 150 ms minimum with less than one sampling interval
+of rounding, and verifies that a separate 100 ms idle-time receiver model emits
+two complete frames. Actual ESPHome reception under Wi-Fi/API load remains to
+be tested; no finite gap guarantees reception if the receiver loop is stalled.
+
+
+### 150 ms frame-gap hardware verification - 29 October 2026
+
+Flashed the updated 14,635-byte image, SHA-256
+`a1f62b152106c479869b32888a36a96446b6875aa0bc34db3f9b3d3115a2f43e`,
+to STC UID `F7DACA0C0A2524`. Flipper CLI emulation alternated synthetic EM4100
+IDs `0102030405` and `0102030406` ten times in approximately two seconds.
+Different valid IDs request separate tones, so this intentionally produced a
+burst of queued beeps. Presence expiry and tone timing were not changed.
+
+Rigol capture used CH1=D0 and CH2=D1, 2.5 V edge thresholds, a 2.4-second
+record and 0.4-microsecond sample spacing. Six complete Wiegand-34 frames were
+captured; all had valid parity and expected payloads `02030405` or `02030406`.
+Idle gaps, measured from final pulse release to the next frame's first falling
+edge, were 151.8176, 149.9900, 449.8456, 150.0520 and 404.2168 ms. The shortest
+gaps agree with the nominal 150 ms scheduler setting within hardware clock and
+edge-timing variation; this is not a claim of an absolute 150.000 ms minimum
+under all oscillator conditions. Pulse widths were 97.2-101.6 microseconds,
+and within-frame falling-edge spacing was 1.7100-1.7148 ms.
+
+The burst yielded six captured frames from ten emulation intervals. This does
+not establish lossless acquisition or queue delivery at that input rate; with
+diagnostics OFF the capture cannot attribute missed submissions to RF decoding
+versus queue refusal. UART monitoring received zero bytes during the stimulus.
+No changes to reading mode or debug settings were sent. Reader remains running
+with debugging OFF, and Flipper CLI emulation was explicitly stopped.
+
+Local evidence: `captures/wiegand-gap150-20261028T220738Z/`, including flashed
+HEX, stimulus log, analysis, result JSON and `acquisition-806mrnx1/` full-memory
+capture. This verifies the STC output gap with Flipper/Rigol; ESP32 reception
+under Wi-Fi/API load still requires a separate integration test.
+
+A portable [measurement summary](bench-results/wiegand-gap150-2026-10-29.json)
+is included in the repository; raw acquisition files remain local.

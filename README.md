@@ -1,43 +1,105 @@
 # K7612 keypad and RFID firmware
 
 Replacement firmware for the **STC8C2K32S2** in the K7612 access keypad.
-It reads the 12-key matrix and EM4100 RFID tags concurrently, reports events
-over UART, and generates a confirmation tone for each key press or new tag.
-OPEN selects red/green status; submitting a PIN with `#` flashes both LEDs.
+It reads EM4100 RFID tags and decimal PINs, sends credentials over **Wiegand**,
+and provides key/tag tones and OPEN-controlled red/green LEDs.
 
 <img src="docs/images/k7612-keypad.png" alt="K7612 access keypad with a metal housing and 12-key numeric keypad" width="280">
 
-The primary build is `keypad_reader`. It starts automatically at power-on and
-uses fixed-memory, interrupt-assisted acquisition suitable for the 8-bit MCU.
-Wiegand-26/34 output supports RFID and decimal PINs submitted with `#`;
-The main build enables output at boot using the sense-pin-verified active-HIGH
-driver polarity. ESPHome integration, PIN authorization,
-credential storage and relay control are not implemented in `keypad_reader`. This is reader firmware, not a complete
-access-control system.
+The primary build, `keypad_reader`, starts automatically with **Wiegand-34
+output enabled and UART debugging OFF**. Normal operation needs the keypad's
+power supply, D0/D1 and common ground connected to a controller, and OPEN if
+LED control is required. No UART host or startup command is needed.
 
-## Features
+The receiving controller handles authorization and unlocking. The firmware
+does not store credentials, validate PINs against an access list, operate the
+relay. An external ESP32 running ESPHome can receive credentials and control
+the indication using the proposed interface below.
 
-- Debounced `1`â€“`9`, `*`, `0`, `#` press and release events; no held-key repeat.
-- EM4100 RF/64 Manchester decoding with header, row parity, column parity and
-  stop-bit validation. Invalid frames are rejected without bit repair.
-- One RFID notification per presentation; removal rearms notification after
-  1.5 seconds without a matching frame or eligible presence prefix.
-- Shared non-blocking buzzer queue: approximately 204 ms at 2.5 kHz per event,
-  with at least 20 ms between tones.
-- Wiegand-26/34: RFID low 24/32 bits; buffered decimal PIN submission with `#`.
-  See [configuration and polarity probe](docs/keypad-reader.md#wiegand-output-and-pins).
-- Active-HIGH red/green LEDs follow OPEN, with a 150 ms both-on flash for
-  a nonempty, valid PIN submitted using `#`.
-- UART at **9600 baud, 8N1**, with acquisition and status diagnostics.
+## Normal operation
 
-See the [reader interface](docs/keypad-reader.md) for events and commands and
-the [firmware architecture](docs/firmware-architecture.md) for implementation
-details, resource use and limitations.
+| Action or input | Reader behavior |
+| --- | --- |
+| Present an EM4100 RF/64 tag | Send its low 32 ID bits in a Wiegand-34 frame and request a tone |
+| Hold the same tag in the field | Suppress repeated credential output and tones |
+| Remove a tag | Rearm after 1.5 seconds without matching frame or eligible presence-prefix evidence |
+| Enter digits, then `#` | Send the decimal PIN value as one Wiegand credential; flash both LEDs for 150 ms |
+| Press `*` | Clear the pending PIN |
+| Leave PIN entry idle for 10 seconds | Clear the pending PIN |
+| OPEN HIGH / released | Red LED on, green off |
+| OPEN LOW / grounded | Green LED on, red off |
+
+Each debounced key press requests one tone; holding a key does not repeat it.
+Multiple simultaneous keys cancel PIN entry and block new presses until all
+keys are released. Tones last approximately 204 ms at 2.5 kHz and share a
+non-blocking queue with at least 20 ms between tones.
+
+OPEN changes are debounced for 20 ms during normal reading. The PIN flash
+acknowledges local entry only: it does not indicate that the controller accepted
+the credential or that Wiegand delivery succeeded. OPEN does not drive the relay.
+
+## Wiegand credentials and configuration
+
+Both RFID and PIN entry use the selected frame format:
+
+| Format | RFID payload | Decimal PIN range | `1234#` payload |
+| --- | --- | --- | --- |
+| **34-bit (default)** | Low 32 bits of the five-byte ID | 0 to 4,294,967,295 | `000004D2` |
+| 26-bit | Low 24 bits of the ID | 0 to 16,777,215 | `0004D2` |
+
+Frames are sent MSB first with leading even and trailing odd parity. The
+external D0/D1 wires idle HIGH; a LOW pulse on D0 means zero and on D1 means one.
+For example, RFID ID `0102030405` produces payload `02030405` in the default
+34-bit format.
+
+PIN digits accumulate locally; individual digits are not sent over Wiegand.
+Empty `#` does nothing. More than ten digits or a value outside the selected
+range invalidates the entry until submit, clear or timeout. Leading zeros are
+not preserved: `001234#` and `1234#` send the same value. PIN and RFID payloads
+share a namespace, so the receiver cannot distinguish their source from a frame.
+
+The output queue holds two outstanding frames, including the active frame.
+Further submissions are dropped; Wiegand has no acknowledgement or retry.
+UART logging does not gate credential output.
+
+The `keypad_reader` flags in [platformio.ini](platformio.ini) select the boot
+format and the verified driver polarity:
+
+```ini
+build_flags = ${env.build_flags} -DK7612_WIEGAND_ACTIVE=1 -DK7612_WIEGAND_BITS=34
+```
+
+Change `K7612_WIEGAND_BITS` to `26` for a persistent 26-bit default and rebuild
+and flash. `K7612_WIEGAND_ACTIVE=1` means MCU HIGH pulls the external wire LOW
+on the tested board; it does not mean the Wiegand wire pulses HIGH.
+
+While stopped, UART commands `WG26` and `WG34` change the format until reset;
+`READ` resumes operation. `WGOFF` disables output. For another board, verify
+polarity before enabling its drivers. See the [reader interface](docs/keypad-reader.md)
+for `WGPROBE`, timing, queue behavior and the complete command reference.
+
+## ESP32 / ESPHome connection
+
+Use a 3.3 V-powered **SN74LVC2G17 buffer** between the keypad's approximately
+5 V D0/D1 wires and ESP32 inputs. Drive OPEN with an external **AO3400A
+MOSFET pull-down**: transistor ON gives green; released OPEN gives red. Do not
+connect D0, D1 or OPEN directly to ESP32 GPIOs, including an open-drain GPIO.
+
+The [connection guide](docs/esphome-connection.md) includes circuit wiring,
+component values, power/reset behavior and an [ESPHome package](examples/esphome-wiegand.yaml)
+for a classic ESP32-WROOM-32 DevKit (GPIO25/26 inputs, GPIO27 indication output).
+This interface is proposed, not yet bench-qualified. OPEN voltage/current still
+need measurement. The firmware now schedules at least 150 ms idle between
+Wiegand frames, leaving nominal margin beyond ESPHome's 100 ms receive timeout.
+Queued-frame separation passes simulator tests, and Flipper/Rigol captures
+confirm approximately 150 ms output gaps. ESP32 testing under Wi-Fi/API load
+remains necessary before deployment.
 
 ## Hardware
 
-The supported target is the **STC8C2K32S2, LQFP32, at 24 MHz**. Check the MCU
-and board routing before using this firmware on another K7612 revision.
+The supported target is the **STC8C2K32S2, LQFP32, at 24 MHz**. These are
+physical MCU pins, not numbered connector positions. Verify routing before
+using the firmware on another K7612 revision.
 
 | Function | MCU signals | Physical pins |
 | --- | --- | --- |
@@ -48,21 +110,18 @@ and board routing before using this firmware on another K7612 revision.
 | RFID carrier drive | P3.5 / T0CLKO | 18 |
 | RFID comparator inputs | P3.6, P3.7 | 19, 20 |
 | Buzzer drive | P3.4 | 17 |
-| Relay drive (active high, bench-confirmed) | P2.3 | 24 |
-| LED1 green (bench-confirmed) | P2.6 | 27 |
-| LED2 red (bench-confirmed) | P2.7 | 28 |
+| Green / red LED outputs | P2.6 / P2.7 | 27 / 28 |
 | OPEN input (active low) | P2.2 | 23 |
-| D0 green wire output | P5.4 | 9 |
-| D1 white wire output | P5.5 | 11 |
-| D0 green wire (input sense) | P3.3 | 16 |
-| D1 white wire (input sense) | P3.2 | 15 |
+| D0 green / D1 white outputs | P5.4 / P5.5 | 9 / 11 |
+| D0 / D1 input sense | P3.3 / P3.2 | 16 / 15 |
+| Relay drive (unused by primary firmware) | P2.3 | 24 |
 
-Rows use open-drain outputs and columns use inputs with pull-ups. The scanner
-releases each row between selections. The carrier is nominally 125 kHz.
+Rows use open-drain outputs and columns use inputs with pull-ups. The carrier
+is nominally 125 kHz. The comparator inputs remain unbiased. UART RX has an
+internal pull-up so it stays idle HIGH when the programming cable is unplugged.
 
-The main connector's OPEN wire, beside D0 and D1, connects to P2.2 / pin 23.
-OPEN HIGH selects red; OPEN LOW selects green. Relay activation is not
-implemented in the main firmware.
+The board's UART and Wiegand signals are approximately 5 V. Use appropriate
+level translation for a 3.3 V adapter, ESP32 or other receiver.
 
 ### Programming connection
 
@@ -77,10 +136,6 @@ upload it using the Arduino's actual board profile before programming the STC.
 | GND | GND |
 | Power output | Disconnected; keypad uses its own supply |
 
-The target UART operates in a 5 V signal domain. A 3.3 V adapter or ESP32 needs
-appropriate level translation. Identify connector signals by function;
-numbered connector positions are not established here.
-
 The MCU must fully power down before entering its bootloader. Prevent adapter
 TX from backfeeding the unpowered target. For a 5 V Arduino Micro, the established
 arrangement uses a Schottky diode with cathode toward Arduino TX and anode
@@ -89,52 +144,49 @@ Verify that MCU VCC falls close to zero when target power is removed.
 
 **Programming replaces the installed firmware.** Retaining factory operation
 requires a separate backup or an unmodified unit. The
-[factory UART interface](docs/using-unflashed-k7612.md) is an alternative to
-installing this firmware and uses a different protocol.
+[factory UART interface](docs/using-unflashed-k7612.md) uses a different protocol.
 
-## Build
+## Build and flash
 
 The development toolchain is Python 3.12, PlatformIO and SDCC. Dependencies and
-the PlatformIO platform version are pinned in the repository.
+the PlatformIO platform version are pinned in the repository. From the repository
+root in PowerShell:
 
 ```powershell
 python -m venv .venv
 .venv/Scripts/python.exe -m pip install -r requirements-tools.txt
-.venv/Scripts/pio.exe run
-```
-
-These examples use PowerShell on Windows. On other hosts, use the virtual
-environment's corresponding executable paths; those hosts have not been
-hardware-qualified. Building does not program the MCU.
-
-| Environment | Purpose |
-| --- | --- |
-| `keypad_reader` (default) | Combined keypad, RFID and confirmation tones |
-| `rfid_firmware_test` | RFID acquisition diagnostics without keypad scanning |
-| `matrix_test` | Standalone matrix and direct LED/buzzer output diagnostics |
-| `uart_smoke`, `pin_watch` | Low-level UART and GPIO diagnostics |
-
-Select another environment with `pio run -e <environment>`.
-
-## Flash
-
-```powershell
+.venv/Scripts/pio.exe run -e keypad_reader
 .venv/Scripts/python.exe -m serial.tools.list_ports -v
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/Flash-STC.ps1 -Port COM14 -Environment keypad_reader
 ```
 
-Replace `COM14` with the adapter's port. Close other serial applications, keep
-the USB adapter powered, and cycle target power when prompted. The script
-builds first and stops on compilation failure. It uses stcgal's `stc8d`
-protocol, 2400-baud bootloader detection, 19200-baud programming and 24 MHz
-oscillator calibration for the supported MCU/bootloader configuration.
+Replace `COM14` with the adapter's current port. Close serial applications,
+keep the USB adapter powered, and cycle keypad power when prompted. The script
+builds first and stops if compilation fails. It uses `stcgal` with the `stc8d`
+protocol, 2400-baud detection, 19200-baud programming and 24 MHz calibration.
+Building alone does not program the MCU. Other host platforms have not been
+hardware-qualified.
 
-## Use
+| Environment | Purpose |
+| --- | --- |
+| `keypad_reader` (default) | Main RFID/PIN Wiegand reader, tones and OPEN LEDs; silent UART startup |
+| `rfid_firmware_test` | RFID-only diagnostics; UART debugging enabled by default |
+| `matrix_test` | Standalone matrix and direct LED/buzzer diagnostics |
+| `uart_smoke`, `pin_watch` | Low-level UART and GPIO diagnostics |
 
-The combined reader starts with UART debugging disabled and operates through
-Wiegand and OPEN without a UART connection. To diagnose it, open a terminal at
-9600 baud, 8N1, send `!`, wait 500 ms, then send `DEBUG ON` and `READ`, each
-followed by Enter. Diagnostic output includes:
+## Optional UART diagnostics
+
+The combined image emits no startup banner, probe byte, events or periodic
+reports by default. Silence on a connected terminal is normal. To enable
+logging at **9600 baud, 8N1**, without flow control:
+
+1. Send `!` to stop reading, then wait 500 ms. With debugging OFF there is no
+   stop acknowledgement.
+2. Send `DEBUG ON` followed by Enter. Expect `OK DEBUG ON`.
+3. Send `?` to inspect configuration, or `WG26` / `WG34` to select a format.
+4. Send `READ` followed by Enter to resume reading with diagnostic output.
+
+Example output with debugging enabled:
 
 ```text
 KEY DOWN 5
@@ -145,38 +197,47 @@ BEEP DONE
 TAG ABSENT REARMED
 ```
 
-Each key press and newly acquired tag requests a tone. Release events do not.
-Multiple simultaneous keys block new presses until all keys are released.
-Periodic `READ` lines report acquisition and queue diagnostics.
+Periodic `READ` lines report acquisition, UART and Wiegand queue counters.
+While reading, only `!` is accepted; other received characters are discarded.
+Stopping turns off the carrier and tone and clears pending PINs and Wiegand
+frames. It can truncate a frame already being transmitted.
 
-The reader starts automatically. Send `!` to stop it before issuing a command;
-then enable `DEBUG ON` if needed and send `?` to query status or `READ` followed
-by a newline to restart. To resume silently, send `DEBUG OFF` before `READ`.
-Every reset restores debugging OFF.
-Commands for the separate `matrix_test` environment, such as direct LED
-control, are not supported by `keypad_reader`.
+To resume silently, send `!`, wait for `OK STOP`, send `DEBUG OFF` and wait
+for `OK DEBUG OFF`, then send `READ`. Every reset restores debugging OFF and
+the build's Wiegand format. UART debugging is not required for tones or LEDs.
 
-## Validate changes
+## Validation and limits
 
-After installing the toolchain with a build:
+Run the hardware-independent regression suite after installing the toolchain:
 
 ```powershell
 .venv/Scripts/python.exe tools/test_reader.py
 ```
 
 The suite compiles actual C code and runs it in the 8051 simulator. It covers
-frame validation, sampling and timer wrap, debounce, multi-key handling, tone
-queuing, presence suppression and interrupt storage isolation. Fixtures are
-generated by the tests; no local captures or connected hardware are needed.
+RFID framing/parity, sampling and timer wrap, keypad debounce and cancellation,
+PIN limits, Wiegand encoding and pulse scheduling, OPEN LEDs, tone queues,
+presence suppression, silent-mode controls and interrupt storage isolation.
+Fixtures are generated by the tests; no connected hardware or saved captures
+are needed. Tests use PlatformIO's SDCC and `s51`, or tools selected through
+`SDCC_BIN` / `PATH`.
 
-Tests locate SDCC and `s51` in PlatformIO's toolchain, or via `SDCC_BIN` or
-`PATH`. The generic simulator does not model the STC analog front end or prove
-real-time hardware margins. Physical validation has covered tag presentation
-and removal, keypad presses, held-key suppression and tone feedback on the
-development board. Reception range, other board revisions and long-term
-reliability remain unqualified.
+On **29 October 2026**, the final 14,635-byte combined image was flashed and
+cold-boot tested. UART received zero bytes after power-on over approximately
+138 seconds without any UART command. Flipper emulation of `0102030405`
+produced two Rigol-captured Wiegand-34 frames with payload `02030405` and valid
+parity, including reacquisition after removal. No repeat frame was detected
+during the held-tag observation; measured pulses were approximately 97 to
+101 microseconds. See the [reader interface](docs/keypad-reader.md) for the
+bench record, firmware hash and test limits.
 
-Keep changes bounded and non-blocking, run the simulator suite, and build both
-reader environments before submitting a change. Document changes to UART
-events, pin assignments or timer ownership. Generated builds, local captures
-and machine-specific equipment settings do not belong in firmware changes.
+EM4100 support is RF/64 Manchester only. Invalid frames are rejected without
+bit repair. Presence-prefix matching can maintain suppression through short
+frame dropouts, but it is not credential authentication. Reception range,
+other board revisions and long-term reliability remain unqualified. Simulator
+tests cannot establish analog performance or hardware timing margins.
+
+The [firmware architecture](docs/firmware-architecture.md) describes resource
+ownership, concurrency and memory use. After firmware changes, run the suite
+and build both reader environments. Keep generated builds, local captures and
+machine-specific equipment settings out of firmware commits.

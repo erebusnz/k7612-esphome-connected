@@ -63,6 +63,10 @@ timestamp and the level preceding the transition.
 The sampling ISR also advances a pre-encoded Wiegand frame one edge at a time;
 its helper uses bank 1 and disables overlaying. Foreground publishes complete
 frames to a byte-indexed three-slot ring (two outstanding frames maximum).
+After the last pulse is released, the scheduler enforces at least 150 ms idle
+before another frame starts (9375 ticks at 16 microseconds; 4688 at 32
+microseconds). This provides nominal margin over ESPHome's 100 ms frame timeout
+without blocking RFID or keypad services.
 STOP masks sampling before resetting the output state. It does not decode
 Wiegand credentials or busy-wait for pulses.
 
