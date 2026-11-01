@@ -6,6 +6,10 @@ UART stays disconnected and debugging remains OFF. Authorization belongs to
 the controller or Home Assistant. The circuit below is a reference design;
 validate it with your board, cable and power supplies before deployment.
 
+The [KiCad PCB project](../esp32-k7612-interface/README.md) implements this
+circuit with an external ESP32 header, a +12V keypad supply connection and
+NO/NC/COMM relay-contact pass-through terminals.
+
 ## Why Wiegand rather than UART?
 
 The installation goal is to keep the keypad at the door and the ESP32 at the

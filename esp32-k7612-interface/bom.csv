@@ -1,0 +1,14 @@
+Reference,Value / MPN,Footprint,Quantity
+J1,K7612,"Interface:TerminalBlock_Phoenix_MKDS-1,5-8-5.08_1x08_P5.08mm_Horizontal",1
+J2,12V SUPPLY,"Interface:TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal",1
+J3,ESP32 DEVKIT,Interface:PinHeader_1x05_P2.54mm_Vertical,1
+J4,RELAY CONTACTS,"Interface:TerminalBlock_Phoenix_MKDS-1,5-3-5.08_1x03_P5.08mm_Horizontal",1
+U1,SN74LVC2G17DBVR,Interface:SOT-23-6,1
+Q1,AO3400A,Interface:SOT-23,1
+R1,1k,Interface:R_0805_2012Metric,1
+R2,1k,Interface:R_0805_2012Metric,1
+R3,100k,Interface:R_0805_2012Metric,1
+R4,100k,Interface:R_0805_2012Metric,1
+R5,1k,Interface:R_0805_2012Metric,1
+R6,100k,Interface:R_0805_2012Metric,1
+C1,100nF,Interface:C_0805_2012Metric,1
