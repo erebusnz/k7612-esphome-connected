@@ -1,0 +1,6 @@
+(version 1)
+# Manufacturer specifies 0.30 mm lands on 0.50 mm pitch. Only allow the
+# resulting 0.20 mm gap between J4 pads; retain project clearance elsewhere.
+(rule "J4 contact spacing"
+  (condition "A.Type == 'Pad' && B.Type == 'Pad' && A.Reference == 'J4' && B.Reference == 'J4'")
+  (constraint clearance (min 0.20mm)))

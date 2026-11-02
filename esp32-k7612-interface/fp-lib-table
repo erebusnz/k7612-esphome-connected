@@ -1,1 +1,2 @@
-(fp_lib_table (version 7) (lib (name "Interface") (type "KiCad") (uri "${KIPRJMOD}/Interface.pretty") (options "") (descr "Project footprints")))
+(fp_lib_table (version 7) (lib (name "Interface") (type "KiCad") (uri "${KIPRJMOD}/Interface.pretty") (options "") (descr "Project footprints"))  (lib (name "JLCImport")(type "KiCad")(uri "${KIPRJMOD}/JLCImport.pretty")(options "")(descr ""))
+)

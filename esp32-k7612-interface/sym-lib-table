@@ -1,1 +1,2 @@
-(sym_lib_table (version 7) (lib (name "Interface") (type "KiCad") (uri "${KIPRJMOD}/Interface.kicad_sym") (options "") (descr "Project interface symbols")))
+(sym_lib_table (version 7) (lib (name "Interface") (type "KiCad") (uri "${KIPRJMOD}/Interface.kicad_sym") (options "") (descr "Project interface symbols"))  (lib (name "JLCImport")(type "KiCad")(uri "${KIPRJMOD}/JLCImport.kicad_sym")(options "")(descr ""))
+)
