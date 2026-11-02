@@ -2763,7 +2763,7 @@
 		)
 		(uuid "4b263a47-51b1-4070-b335-7baf72f2736e")
 	)
-	(text "Populate J3 and J5. Connect one controller at a time. J3 pin 1: DevKit +5V. J5: power Apollo via USB-C."
+	(text "One controller at a time. Fit U2/C2/C3 for +5V on J2-1 and J4-11; omit all three for USB power."
 		(exclude_from_sim no)
 		(at 25 175 0)
 		(effects

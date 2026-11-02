@@ -1,4 +1,4 @@
-# Complete configuration for an Apollo ESK-1 (ESP32-C6), powered by USB-C.
+# Complete configuration for an Apollo ESK-1 (ESP32-C6), powered by USB-C or regulated +5V on J4-11.
 # GPIO6, GPIO3 and GPIO7 are reserved on both expansion ports.
 # Use this in place of the stock ESK-1 YAML with its GPIO6 probe and GPIO3 PIR.
 esphome:
