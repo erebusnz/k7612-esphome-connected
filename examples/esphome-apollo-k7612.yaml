@@ -1,0 +1,35 @@
+# Complete configuration for an Apollo ESK-1 (ESP32-C6), powered by USB-C or regulated +5V on J4-11.
+# GPIO6, GPIO3 and GPIO7 are reserved on both expansion ports.
+# Use this in place of the stock ESK-1 YAML with its GPIO6 probe and GPIO3 PIR.
+esphome:
+  name: apollo-k7612
+  friendly_name: Apollo K7612
+
+esp32:
+  board: esp32-c6-devkitc-1
+  flash_size: 8MB
+  framework:
+    type: esp-idf
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+logger:
+api:
+ota:
+  - platform: esphome
+
+wiegand:
+  - id: k7612_reader
+    d0: GPIO6
+    d1: GPIO3
+    on_tag:
+      - homeassistant.tag_scanned: !lambda 'return std::string("k7612-") + x;'
+
+switch:
+  - platform: gpio
+    id: k7612_red
+    name: "K7612 Red Indication"
+    pin: GPIO7
+    restore_mode: ALWAYS_OFF
