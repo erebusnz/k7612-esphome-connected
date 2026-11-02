@@ -78,31 +78,50 @@ While stopped, UART commands `WG26` and `WG34` change the format until reset;
 polarity before enabling its drivers. See the [reader interface](docs/keypad-reader.md)
 for `WGPROBE`, timing, queue behavior and the complete command reference.
 
-## Connecting the K7612 to an ESP32 running ESPHome
+## Connecting the K7612 to ESPHome
 
-Use **Wiegand over the existing keypad cable** to keep the ESP32 at the
-controller end of the run. D0/D1 carry RFID and submitted PIN credentials;
-OPEN carries LED indication control back to the keypad, alongside keypad
-power and common GND. UART stays local to programming/diagnostics and is
-disconnected in normal operation. Its MCU-level TX/RX connection is not a
-long-cable line interface. Verify Wiegand signal quality on the actual cable;
-no maximum cable length is specified for this interface.
+The interconnect PCB sits at the controller end of the keypad cable. It buffers
+the keypad’s approximately 5 V Wiegand D0/D1 signals down to 3.3 V for the
+ESP32. In the other direction, the controller drives an AO3400A MOSFET to pull
+OPEN low for a red indication or release it for green. Wire the keypad to J1:
+1 = +12 V, 2 = GND, 3 = OPEN, 4 = D0 (green), and 5 = D1 (white).
 
-Use a 3.3 V-powered **SN74LVC2G17 buffer** between the keypad's approximately
-5 V D0/D1 wires and ESP32 inputs. Drive OPEN with an external **AO3400A
-MOSFET pull-down**: transistor ON gives red; released OPEN gives green. Do not
-connect D0, D1 or OPEN directly to ESP32 GPIOs, including an open-drain GPIO.
-The MOSFET provides an open-drain current sink with ample capacity, but OPEN
-itself is a low-current input (approximately 0.5 mA when pulled LOW). Its
-5 V released voltage is the reason for the external transistor. This is an
-indication signal, not a high-current lock or relay output.
+![K7612 interconnect PCB showing the ESP32 pin header above the Apollo ribbon connector](esp32-k7612-interface.png)
 
-The [connection guide](docs/esphome-connection.md) includes circuit wiring,
-component values, power/reset behavior and an [ESPHome package](examples/esphome-wiegand.yaml)
-for a classic ESP32-WROOM-32 DevKit (GPIO25/26 inputs, GPIO27 indication output).
-The firmware schedules a nominal 150 ms idle gap between Wiegand frames,
-leaving margin beyond ESPHome's 100 ms receive timeout. Validate the reference
-circuit and consecutive credential reception with your installation.
+**Connect one controller at a time.** Both connectors share the 3.3 V supply
+and OPEN control signal.
+
+| Signal | J2 header → classic ESP32 DevKit | J4 ribbon → Apollo Starter Kit |
+| --- | --- | --- |
+| Optional 5 V to controller | Pin 1 → 5V input | Pad 11 → system +5V |
+| 3.3 V from controller to buffer | Pin 2 → 3V3 | Pad 14 → always-on +3V3 |
+| Common ground | Pin 3 → GND | Pad 1 → GND |
+| Wiegand D1 | Pin 4 → GPIO26 | Pad 6 → GPIO3 |
+| Wiegand D0 | Pin 5 → GPIO25 | Pad 5 → GPIO6 |
+| OPEN control | Pin 6 → GPIO27 | Pad 4 → GPIO7 |
+
+**ESP32 DevKit (J2).** Use jumper wires from the six-pin, 2.54 mm header to
+the labeled pins on the DevKit. The square pad marks J2 pin 1. Add the
+[Wiegand package](examples/esphome-wiegand.yaml) to your ESPHome node.
+
+**Apollo Starter Kit (J4).** Insert the 14-contact, 0.5 mm pitch ribbon from
+the board edge with its exposed contacts facing J4’s bottom contacts, then
+close the latch. The table uses **accessory PCB pad numbers**. The Rev 4
+mainboard numbering is reversed through the ribbon. Before first power,
+disconnect all supplies and the battery, then verify continuity from J4 pads
+1, 11 and 14 to Apollo GND, +5V and +3V3 respectively. Use the standalone
+[Apollo ESPHome configuration](examples/esphome-apollo-k7612.yaml), which
+reserves GPIO6, GPIO3 and GPIO7 for the keypad.
+
+**Choose the power option at assembly.** To power the controller from the
+keypad’s 12 V supply, fit U2 (LM7805), C2 and C3. Regulated 5 V then reaches
+J2 pin 1 and J4 pad 11. When powering Apollo this way, disconnect USB-C and
+its battery. For a USB-powered controller, omit U2, C2 and C3 together. The
+two connector 5 V pins remain tied together and can be live from USB.
+
+The [PCB guide](esp32-k7612-interface/README.md) includes the complete connector
+pinout, BOM and KiCad project details. The [electrical connection guide](docs/esphome-connection.md)
+covers cable wiring, signal levels and reset behavior.
 
 ## Hardware
 
