@@ -260,3 +260,22 @@ The [firmware architecture](docs/firmware-architecture.md) describes resource
 ownership, concurrency and memory use. After firmware changes, run the suite
 and build both reader environments. Keep generated builds, local captures and
 machine-specific equipment settings out of firmware commits.
+
+## Licences
+
+Copyright (c) 2026 erebusnz.
+
+- **Hardware:** The original interface PCB designs in
+  [`esp32-k7612-interface/`](esp32-k7612-interface/), the PCB rendering
+  `esp32-k7612-interface.png`, and accompanying hardware design documentation
+  are licensed under the **CERN Open Hardware Licence Version 2 - Strongly
+  Reciprocal** (`CERN-OHL-S-2.0`). See [LICENSE-HARDWARE](LICENSE-HARDWARE) and
+  the [hardware licence notice](esp32-k7612-interface/README.md#licence).
+- **Firmware and software:** The firmware in `src/`, supporting software in
+  `tools/` (including the Arduino UART bridge), ESPHome configurations in
+  `examples/`, build configuration, and associated software documentation are
+  licensed under the **MIT License**. See [LICENSE-FIRMWARE](LICENSE-FIRMWARE).
+
+Third-party library data and models retain their respective licences. In
+particular, the KiCad library assets remain covered by
+[LICENSE-KICAD-LIBRARIES.md](esp32-k7612-interface/LICENSE-KICAD-LIBRARIES.md).

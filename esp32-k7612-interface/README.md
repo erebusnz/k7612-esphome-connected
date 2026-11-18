@@ -145,6 +145,29 @@ kicad-cli sch erc esp32-k7612-interface.kicad_sch --exit-code-violations -o erc.
 kicad-cli pcb drc esp32-k7612-interface.kicad_pcb --schematic-parity --exit-code-violations -o drc.rpt
 ```
 
+## Licence
+
+Copyright (c) 2026 erebusnz.
+
+This project's original hardware design sources, including the schematic,
+PCB layout, BOM, original library assets and accompanying documentation,
+describe Open Hardware and are licensed under the **CERN Open Hardware
+Licence Version 2 - Strongly Reciprocal** (`CERN-OHL-S-2.0`).
+
+You may redistribute and modify this source and make products using it under
+the terms of CERN-OHL-S v2. See [LICENSE-HARDWARE](../LICENSE-HARDWARE) for the
+full licence text.
+
+This source is distributed WITHOUT ANY EXPRESS OR IMPLIED WARRANTY,
+INCLUDING OF MERCHANTABILITY, SATISFACTORY QUALITY AND FITNESS FOR A
+PARTICULAR PURPOSE. Please see CERN-OHL-S v2 for applicable conditions.
+
+Source Location: [erebusnz/k7612-esphome-connected](https://github.com/erebusnz/k7612-esphome-connected).
+
+Third-party library data and models retain their respective licences; see
+the library attribution below. The firmware and supporting software are
+separately licensed under the [MIT License](../LICENSE-FIRMWARE).
+
 ## Library attribution
 
 `Interface.pretty` contains unmodified footprints from the KiCad 10 official
